@@ -131,7 +131,7 @@
     Voltar
   </a>
   <a href="lucas_rebeca_wedding.html" class="header-logo">L &amp; R</a>
-  <button class="admin-btn" id="admin-btn" onclick="abrirModalAdmin()">Admin</button>
+  <button class="admin-btn" id="admin-btn" onclick="abrirModalAdmin()" style="display:none;">Admin</button>
 </header>
 
 <div class="hero-full">
@@ -583,6 +583,11 @@ async function executarCancelamento() {
 // ---- INIT: carrega reservas da planilha e renderiza ----
 render(); // renderiza já (sem reservas) para aparecer rápido
 carregarReservas(); // depois sincroniza com a planilha
+
+// Mostra botão Admin só com ?admin na URL
+if (window.location.search.includes('admin')) {
+  document.getElementById('admin-btn').style.display = '';
+}
 </script>
 </body>
 </html>
