@@ -350,7 +350,7 @@ function render() {
       const badgeHtml = reserva
         ? `<span class="gift-status-badge badge-reservado">✓ Reservado</span>`
         : `<span class="gift-status-badge badge-disponivel">Disponível</span>`;
-      const reservadoPorHtml = reserva ? `<p class="gift-reservado-por">💝 Reservado por: ${reserva}</p>` : '';
+      const reservadoPorHtml = '';
       // Cancel button: always shown in admin mode; for regular users, shown only if they stored their name in sessionStorage matching the reservation
       const meuNome = (sessionStorage.getItem('meuNomeReserva') || '').toLowerCase();
       const reservadoPorLower = reserva ? reserva.toLowerCase() : '';
