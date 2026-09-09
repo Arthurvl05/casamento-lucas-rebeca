@@ -425,6 +425,7 @@ document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click
 const SHEETDB_URL = 'https://sheetdb.io/api/v1/nv8786wwncwzh';
 let reservas = {}; // { nomePresente: nomeConvidado }
 let reservaAtualId = null;
+let reservaAtualNomeUsuario = '';
 
 // Carrega reservas da planilha ao iniciar
 async function carregarReservas() {
@@ -477,6 +478,8 @@ async function confirmarReserva() {
     return;
   }
 
+  // Salva nome antes de fechar o modal (campo some do DOM ao fechar)
+  reservaAtualNomeUsuario = nomeUsuario;
   // Abre modal de confirmação bonito
   document.getElementById('confirma-texto').innerHTML = `Você está reservando <strong>${presente.nome}</strong> em nome de <strong>${nomeUsuario}</strong>. Deseja confirmar?`;
   fecharModal('modal-reserva');
@@ -484,7 +487,7 @@ async function confirmarReserva() {
 }
 
 async function executarReserva() {
-  const nomeUsuario = document.getElementById('input-reserva-nome').value.trim();
+  const nomeUsuario = reservaAtualNomeUsuario;
   const presente = presentes.find(p => p.id === reservaAtualId);
   if (!presente) return;
 
@@ -504,6 +507,7 @@ async function executarReserva() {
       reservas[presente.nome] = nomeUsuario;
       fecharModal('modal-confirma');
       reservaAtualId = null;
+      reservaAtualNomeUsuario = '';
       render();
     } else {
       btnSim.disabled = false;
