@@ -384,9 +384,13 @@ function render() {
         ? `<span class="gift-status-badge badge-reservado">✓ Reservado</span>`
         : `<span class="gift-status-badge badge-disponivel">Disponível</span>`;
       const reservadoPorHtml = '';
+      const podeCancel = reserva && (
+        adminMode ||
+        (nomeUsuarioSessao && nomeUsuarioSessao.trim().toLowerCase() === reserva.trim().toLowerCase())
+      );
       const btnHtml = reserva
-        ? `<button class="btn-reservar reservado-btn" disabled>✓ Reservado</button>
-           <button class="btn-cancelar" data-id="${p.id}">Cancelar reserva</button>`
+        ? `<button class="btn-reservar reservado-btn" disabled>✓ Reservado</button>` +
+          (podeCancel ? `<button class="btn-cancelar" data-id="${p.id}">Cancelar reserva</button>` : '')
         : `<button class="btn-reservar" data-id="${p.id}">Reservar presente</button>`;
       const adminHtml = `<div class="gift-admin-actions"><button class="btn-sm btn-toggle" data-id="${p.id}">${p.st==='comprado'?'Marcar disponível':'Marcar comprado'}</button><button class="btn-sm btn-delete" data-id="${p.id}">Excluir</button></div>`;
       c.innerHTML = `${badgeHtml}${imgHtml}<div class="gift-body"><p class="gift-name">${p.nome}</p>${reservadoPorHtml}<div class="gift-links">${lh}</div>${btnHtml}${adminHtml}</div>`;
@@ -425,6 +429,8 @@ const SHEETDB_URL = 'https://sheetdb.io/api/v1/nv8786wwncwzh';
 let reservas = {}; // { nomePresente: nomeConvidado }
 let reservaAtualId = null;
 let reservaAtualNomeUsuario = '';
+// Nome do usuário atual nesta sessão (salvo ao fazer uma reserva)
+let nomeUsuarioSessao = sessionStorage.getItem('cha_usuario_nome') || '';
 
 // Carrega reservas da planilha ao iniciar
 async function carregarReservas() {
@@ -504,6 +510,9 @@ async function executarReserva() {
 
     if (ok) {
       reservas[presente.nome] = nomeUsuario;
+      // Salva o nome do usuário na sessão para controle de acesso
+      nomeUsuarioSessao = nomeUsuario;
+      sessionStorage.setItem('cha_usuario_nome', nomeUsuario);
       fecharModal('modal-confirma');
       reservaAtualId = null;
       reservaAtualNomeUsuario = '';
@@ -524,7 +533,7 @@ async function executarReserva() {
 function abrirCancelamento(id, nome) {
   reservaAtualId = id;
   const presente = presentes.find(p => p.id === id);
-  document.getElementById('cancelar-nome-presente').textContent = '🎁 ' + presente.nome + ' · Reservado por: ' + (reservas[presente.nome] || '');
+  document.getElementById('cancelar-nome-presente').textContent = '🎁 ' + presente.nome;
   document.getElementById('input-cancelar-nome').value = '';
   document.getElementById('cancelar-erro').style.display = 'none';
   document.getElementById('modal-cancelar').classList.add('open');
@@ -539,6 +548,10 @@ async function confirmarCancelamento() {
 
   if (!nomeDigitado) { erro.textContent = 'Por favor, digite seu nome.'; erro.style.display = 'block'; return; }
   if (nomeDigitado !== nomeReservado) { erro.textContent = 'Nome incorreto. Somente quem fez a reserva pode cancelá-la.'; erro.style.display = 'block'; return; }
+
+  // Salva o nome verificado na sessão
+  nomeUsuarioSessao = document.getElementById('input-cancelar-nome').value.trim();
+  sessionStorage.setItem('cha_usuario_nome', nomeUsuarioSessao);
 
   // Abre modal de confirmação bonito
   document.getElementById('confirma-cancelar-texto').innerHTML = `Você está cancelando a reserva de <strong>${presente.nome}</strong>. Tem certeza?`;
@@ -565,6 +578,7 @@ async function executarCancelamento() {
       delete reservas[presente.nome];
       fecharModal('modal-confirma-cancelar');
       reservaAtualId = null;
+      // Mantém o nome na sessão (pode ter outras reservas)
       render();
     } else {
       btnSim.disabled = false;
