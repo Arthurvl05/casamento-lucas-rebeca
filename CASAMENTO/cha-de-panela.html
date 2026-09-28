@@ -490,6 +490,10 @@ async function confirmarReserva() {
   // Abre modal de confirmação bonito
   document.getElementById('confirma-texto').innerHTML = `Você está reservando <strong>${presente.nome}</strong> em nome de <strong>${nomeUsuario}</strong>. Deseja confirmar?`;
   fecharModal('modal-reserva');
+  // Reseta o botão (fica travado em "Salvando..." após uma reserva anterior)
+  const btnSimReset = document.getElementById('confirma-sim');
+  btnSimReset.disabled = false;
+  btnSimReset.textContent = '✓ Sim, quero reservar';
   document.getElementById('modal-confirma').classList.add('open');
 }
 
@@ -558,6 +562,10 @@ async function confirmarCancelamento() {
   // Abre modal de confirmação bonito
   document.getElementById('confirma-cancelar-texto').innerHTML = `Você está cancelando a reserva de <strong>${presente.nome}</strong>. Tem certeza?`;
   fecharModal('modal-cancelar');
+  // Reseta o botão (fica travado em "Cancelando..." após um cancelamento anterior)
+  const btnCancelReset = document.getElementById('confirma-cancelar-sim');
+  btnCancelReset.disabled = false;
+  btnCancelReset.textContent = 'Sim, cancelar reserva';
   document.getElementById('modal-confirma-cancelar').classList.add('open');
 }
 
