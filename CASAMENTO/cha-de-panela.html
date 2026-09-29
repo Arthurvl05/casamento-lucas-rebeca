@@ -454,16 +454,16 @@ async function lerReservasDaPlanilha() {
   return r;
 }
 
-// Grava na planilha. Devolve true só se a linha foi realmente atualizada.
+// Grava na planilha. Devolve { ok, erro, por }.
 async function salvarNaPlanilha(nomePresente, data) {
   const res = await fetch(SCRIPT_URL, {
     method: 'POST', // sem Content-Type de propósito (evita bloqueio de CORS)
     body: JSON.stringify({ aba: ABA, chave: 'Presentes', valor: nomePresente, data })
   });
-  if (!res.ok) return false;
+  if (!res.ok) return { ok: false, erro: 'HTTP ' + res.status };
   const resp = await res.json();
   if (resp.erro) console.error('Planilha respondeu:', resp.erro, '| presente:', nomePresente);
-  return resp.updated === 1;
+  return { ok: resp.updated === 1, erro: resp.erro, por: resp.por };
 }
 
 function mostrarAvisoErro(mostrar) {
@@ -542,44 +542,30 @@ async function executarReserva() {
   const presente = presentes.find(p => p.id === reservaAtualId);
   if (!presente) return;
 
-  const btnSim = document.getElementById('confirma-sim');
-  btnSim.disabled = true;
-  btnSim.textContent = 'Salvando...';
+  // Atualiza a tela na hora; a planilha é gravada em segundo plano
+  reservas[presente.nome] = nomeUsuario;
+  nomeUsuarioSessao = nomeUsuario;
+  sessionStorage.setItem('cha_usuario_nome', nomeUsuario);
+  fecharModal('modal-confirma');
+  reservaAtualId = null;
+  reservaAtualNomeUsuario = '';
+  render();
 
   try {
-    // Confere na planilha se ninguém reservou enquanto a página estava aberta
-    const atuais = await lerReservasDaPlanilha();
-    if (atuais[presente.nome]) {
-      reservas = atuais;
-      fecharModal('modal-confirma');
-      reservaAtualId = null;
-      reservaAtualNomeUsuario = '';
+    const r = await salvarNaPlanilha(presente.nome, { 'Reservado Por': nomeUsuario, 'Status': 'TRUE' });
+    if (r.ok) return;
+    if (r.erro === 'ja_reservado') {
+      reservas[presente.nome] = r.por || 'outra pessoa';
       render();
       alert('Poxa, alguém acabou de reservar este presente. Escolha outro 💛');
       return;
     }
-
-    const ok = await salvarNaPlanilha(presente.nome, { 'Reservado Por': nomeUsuario, 'Status': 'TRUE' });
-
-    if (ok) {
-      reservas[presente.nome] = nomeUsuario;
-      // Salva o nome do usuário na sessão para controle de acesso
-      nomeUsuarioSessao = nomeUsuario;
-      sessionStorage.setItem('cha_usuario_nome', nomeUsuario);
-      fecharModal('modal-confirma');
-      reservaAtualId = null;
-      reservaAtualNomeUsuario = '';
-      render();
-    } else {
-      btnSim.disabled = false;
-      btnSim.textContent = '✓ Sim, quero reservar';
-      alert('Erro ao salvar. Tente novamente.');
-    }
+    throw new Error(r.erro || 'falha ao salvar');
   } catch(e) {
     console.error('Erro ao reservar:', e);
-    btnSim.disabled = false;
-    btnSim.textContent = '✓ Sim, quero reservar';
-    alert('Erro de conexão. Tente novamente.');
+    delete reservas[presente.nome];
+    render();
+    alert('Não conseguimos salvar a reserva de ' + presente.nome + '. Tente novamente.');
   }
 }
 
@@ -620,28 +606,21 @@ async function executarCancelamento() {
   const presente = presentes.find(p => p.id === reservaAtualId);
   if (!presente) return;
 
-  const btnSim = document.getElementById('confirma-cancelar-sim');
-  btnSim.disabled = true;
-  btnSim.textContent = 'Cancelando...';
+  // Atualiza a tela na hora; a planilha é gravada em segundo plano
+  const anterior = reservas[presente.nome];
+  delete reservas[presente.nome];
+  fecharModal('modal-confirma-cancelar');
+  reservaAtualId = null;
+  render();
 
   try {
-    const ok = await salvarNaPlanilha(presente.nome, { 'Reservado Por': '', 'Status': 'FALSE' });
-
-    if (ok) {
-      delete reservas[presente.nome];
-      fecharModal('modal-confirma-cancelar');
-      reservaAtualId = null;
-      // Mantém o nome na sessão (pode ter outras reservas)
-      render();
-    } else {
-      btnSim.disabled = false;
-      btnSim.textContent = 'Sim, cancelar reserva';
-      alert('Erro ao cancelar. Tente novamente.');
-    }
+    const r = await salvarNaPlanilha(presente.nome, { 'Reservado Por': '', 'Status': 'FALSE' });
+    if (!r.ok) throw new Error(r.erro || 'falha ao cancelar');
   } catch(e) {
-    btnSim.disabled = false;
-    btnSim.textContent = 'Sim, cancelar reserva';
-    alert('Erro de conexão. Tente novamente.');
+    console.error('Erro ao cancelar:', e);
+    reservas[presente.nome] = anterior;
+    render();
+    alert('Não conseguimos cancelar a reserva de ' + presente.nome + '. Tente novamente.');
   }
 }
 
