@@ -384,7 +384,7 @@ function render() {
       const imgHtml = p.foto ? `<div class="gift-img-wrap"><img src="${p.foto}" alt="${p.nome}" loading="lazy" onerror="this.parentElement.style.display='none'"></div>` : '';
       const badgeHtml = reserva
         ? `<span class="gift-status-badge badge-reservado">✓ Reservado</span>`
-        : `<span class="gift-status-badge badge-disponivel">Disponível</span>`;
+        : statusReservas === 'ok' ? `<span class="gift-status-badge badge-disponivel">Disponível</span>` : '';
       const reservadoPorHtml = '';
       const podeCancel = reserva && (
         adminMode ||
@@ -393,7 +393,9 @@ function render() {
       const btnHtml = reserva
         ? `<button class="btn-reservar reservado-btn" disabled>✓ Reservado</button>` +
           (podeCancel ? `<button class="btn-cancelar" data-id="${p.id}">Cancelar reserva</button>` : '')
-        : `<button class="btn-reservar" data-id="${p.id}">Reservar presente</button>`;
+        : statusReservas === 'ok'
+          ? `<button class="btn-reservar" data-id="${p.id}">Reservar presente</button>`
+          : `<button class="btn-reservar reservado-btn" disabled>${statusReservas === 'carregando' ? 'Carregando...' : 'Indisponível no momento'}</button>`;
       const adminHtml = `<div class="gift-admin-actions"><button class="btn-sm btn-toggle" data-id="${p.id}">${p.st==='comprado'?'Marcar disponível':'Marcar comprado'}</button><button class="btn-sm btn-delete" data-id="${p.id}">Excluir</button></div>`;
       c.innerHTML = `${badgeHtml}${imgHtml}<div class="gift-body"><p class="gift-name">${p.nome}</p>${reservadoPorHtml}<div class="gift-links">${lh}</div>${btnHtml}${adminHtml}</div>`;
 
@@ -426,36 +428,74 @@ function fecharModal(id){document.getElementById(id).classList.remove('open');}
 function copiarPix(){const v=document.getElementById('pix-key-value').textContent.trim();navigator.clipboard.writeText(v).then(()=>{const btn=document.querySelector('.pix-key-copy');const orig=btn.textContent;btn.textContent='Copiado!';setTimeout(()=>btn.textContent=orig,1800);});}
 document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
 
-// ---- SISTEMA DE RESERVAS (SheetDB) ----
-const SHEETDB_URL = 'https://sheetdb.io/api/v1/nv8786wwncwzh';
+// ---- SISTEMA DE RESERVAS (Google Apps Script) ----
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyu8WEoj6fr5QoFXJGg1QmOSN0vPgmRE7K__JW55ZmoqzT5j1cUPmQ8we962F06gr6m/exec';
+const ABA = 'Página1';
+let statusReservas = 'carregando'; // 'carregando' | 'ok' | 'erro'
 let reservas = {}; // { nomePresente: nomeConvidado }
 let reservaAtualId = null;
 let reservaAtualNomeUsuario = '';
 // Nome do usuário atual nesta sessão (salvo ao fazer uma reserva)
 let nomeUsuarioSessao = sessionStorage.getItem('cha_usuario_nome') || '';
 
+// Lê a planilha e devolve { nomePresente: nomeConvidado }. Lança erro se falhar.
+async function lerReservasDaPlanilha() {
+  const CATEGORIAS = ['Cozinha','Lavanderia','Sala','Quarto','Banheiro'];
+  const res = await fetch(`${SCRIPT_URL}?aba=${encodeURIComponent(ABA)}`);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const dados = await res.json();
+  if (!Array.isArray(dados)) throw new Error('Resposta inválida: ' + JSON.stringify(dados));
+  const r = {};
+  dados.forEach(row => {
+    const nome = (row['Presentes'] || '').trim();
+    const reservadoPor = (row['Reservado Por'] || '').trim();
+    if (nome && !CATEGORIAS.includes(nome) && reservadoPor) r[nome] = reservadoPor;
+  });
+  return r;
+}
+
+// Grava na planilha. Devolve true só se a linha foi realmente atualizada.
+async function salvarNaPlanilha(nomePresente, data) {
+  const res = await fetch(SCRIPT_URL, {
+    method: 'POST', // sem Content-Type de propósito (evita bloqueio de CORS)
+    body: JSON.stringify({ aba: ABA, chave: 'Presentes', valor: nomePresente, data })
+  });
+  if (!res.ok) return false;
+  const resp = await res.json();
+  if (resp.erro) console.error('Planilha respondeu:', resp.erro, '| presente:', nomePresente);
+  return resp.updated === 1;
+}
+
+function mostrarAvisoErro(mostrar) {
+  let el = document.getElementById('aviso-reservas');
+  if (!mostrar) { if (el) el.remove(); return; }
+  if (el) return;
+  el = document.createElement('div');
+  el.id = 'aviso-reservas';
+  el.style.cssText = 'position:sticky;top:0;z-index:50;background:#f8e8e8;color:#8a4b4b;padding:12px 16px;text-align:center;font-family:Jost,sans-serif;font-size:14px;';
+  el.innerHTML = 'Não conseguimos carregar as reservas agora. <button style="margin-left:8px;background:none;border:1px solid #8a4b4b;color:#8a4b4b;padding:4px 10px;border-radius:4px;cursor:pointer;font-family:inherit;">Tentar de novo</button>';
+  el.querySelector('button').addEventListener('click', carregarReservas);
+  document.body.prepend(el);
+}
+
 // Carrega reservas da planilha ao iniciar
 async function carregarReservas() {
-  const CATEGORIAS = ['Cozinha','Lavanderia','Sala','Quarto','Banheiro'];
+  statusReservas = 'carregando';
+  mostrarAvisoErro(false);
+  render();
   try {
-    const res = await fetch(SHEETDB_URL);
-    if (!res.ok) return;
-    const dados = await res.json();
-    reservas = {};
-    dados.forEach(row => {
-      const nome = row['Presentes'] || '';
-      const reservadoPor = row['Reservado Por'] || '';
-      if (nome && !CATEGORIAS.includes(nome.trim()) && reservadoPor) {
-        reservas[nome.trim()] = reservadoPor;
-      }
-    });
-    render();
+    reservas = await lerReservasDaPlanilha();
+    statusReservas = 'ok';
   } catch(e) {
     console.error('Erro ao carregar reservas:', e);
+    statusReservas = 'erro';
+    mostrarAvisoErro(true);
   }
+  render();
 }
 
 function abrirReserva(id, nome) {
+  if (statusReservas !== 'ok') return;
   if (reservas[nome]) {
     alert('Este presente já foi reservado por ' + reservas[nome] + '.');
     return;
@@ -507,12 +547,19 @@ async function executarReserva() {
   btnSim.textContent = 'Salvando...';
 
   try {
-    const patch = await fetch(`${SHEETDB_URL}/Presentes/${encodeURIComponent(presente.nome)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data: { 'Reservado Por': nomeUsuario, 'Status': 'TRUE' } })
-    });
-    const ok = patch.ok;
+    // Confere na planilha se ninguém reservou enquanto a página estava aberta
+    const atuais = await lerReservasDaPlanilha();
+    if (atuais[presente.nome]) {
+      reservas = atuais;
+      fecharModal('modal-confirma');
+      reservaAtualId = null;
+      reservaAtualNomeUsuario = '';
+      render();
+      alert('Poxa, alguém acabou de reservar este presente. Escolha outro 💛');
+      return;
+    }
+
+    const ok = await salvarNaPlanilha(presente.nome, { 'Reservado Por': nomeUsuario, 'Status': 'TRUE' });
 
     if (ok) {
       reservas[presente.nome] = nomeUsuario;
@@ -578,13 +625,9 @@ async function executarCancelamento() {
   btnSim.textContent = 'Cancelando...';
 
   try {
-    const patch = await fetch(`${SHEETDB_URL}/Presentes/${encodeURIComponent(presente.nome)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data: { 'Reservado Por': '', 'Status': 'FALSE' } })
-    });
+    const ok = await salvarNaPlanilha(presente.nome, { 'Reservado Por': '', 'Status': 'FALSE' });
 
-    if (patch.ok) {
+    if (ok) {
       delete reservas[presente.nome];
       fecharModal('modal-confirma-cancelar');
       reservaAtualId = null;
@@ -603,8 +646,7 @@ async function executarCancelamento() {
 }
 
 // ---- INIT: carrega reservas da planilha e renderiza ----
-render(); // renderiza já (sem reservas) para aparecer rápido
-carregarReservas(); // depois sincroniza com a planilha
+carregarReservas(); // renderiza já com botões travados e depois sincroniza com a planilha
 
 // Mostra botão Admin só com ?admin na URL
 if (window.location.search.includes('admin')) {
